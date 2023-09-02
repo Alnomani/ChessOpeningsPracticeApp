@@ -1,0 +1,421 @@
+package com.chessgame.chessopeningslearning.controller;
+import java.util.List;
+import java.awt.Point;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Hashtable;
+import java.util.Map;
+import java.util.Set;
+
+class ChessBoard
+{
+    static final int boardSize = 8;
+    private boolean blacksTurn = false;
+    private ChessPiece[][] boardState;
+    private List<ChessPiece> blackPieces = new ArrayList<ChessPiece>();
+    private List<ChessPiece> whitePieces = new ArrayList<ChessPiece>();
+    Map<listType,List<ChessPiece>> pieceLists = new Hashtable<>();
+    enum listType
+    {
+        white,
+        black,
+        capturedWhite,
+        capturedBlack
+    }      
+    public Map<Boolean, Point> kingPositions = new Hashtable<>();
+    Map<String, String> imgPaths = new Hashtable<>();
+    ChessBoard()
+    {
+        boardState = new ChessPiece[boardSize][boardSize];
+        pieceLists.put(true, new ArrayList<ChessPiece>());
+        pieceLists.put(false, new ArrayList<ChessPiece>());
+        String fenString ="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
+        stringToBoard(fenString);
+
+        drawBoard(null);
+        String[] pieceChars = {"b","k","q","p","n","r"};
+        for (String pieceChar : pieceChars) {
+            imgPaths.put(pieceChar, "/assets/Chess_" + pieceChar+ ".png");
+            imgPaths.put(pieceChar.toUpperCase(), 
+            "/assets/Chess_w" + pieceChar.toUpperCase() +".png");
+        }
+        
+    }
+    void resetBoard()
+    {
+        boardState = new ChessPiece[boardSize][boardSize];
+        pieceLists.get(true).add(null);
+        blackPieces.clear();
+        whitePieces.clear();
+        kingPositions.clear();
+        blacksTurn = false;
+        String fenString ="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
+        stringToBoard(fenString);
+    }
+
+    public void removeFromPiecesList(ChessPiece piece)
+    {
+        if(piece != null && piece.isBlack)
+        {
+            blackPieces.remove(piece);
+        }
+        else if(piece != null && !piece.isBlack)
+        {
+             whitePieces.remove(piece);
+        }
+    }
+    public void addToPiecesList(ChessPiece piece)
+    {
+        if(piece != null && piece.isBlack)
+        {
+            blackPieces.add(piece);
+        }
+        else if(piece != null && !piece.isBlack)
+        {
+             whitePieces.add(piece);
+        }
+    }
+
+
+
+    boolean move(int pieceX, int pieceY, int destinationX, int destinationY)
+    {
+        if(!inBounds(pieceX, pieceY) ||
+           !inBounds(destinationX, destinationY) ||
+           boardState[pieceX][pieceY] == null ||
+           boardState[pieceX][pieceY].isBlack != blacksTurn
+        )
+        {
+            System.out.println("No piece at position or Coords out of bounds");
+            System.out.println(pieceX + ":"+ pieceY + "-" + destinationX + ":"+ destinationY);
+            return false;
+        }
+        // Check if piece to be moves is pinned, or a discovered check occurs as a result of moving the piece.
+        System.out.println("Trying to move " + boardState[pieceX][pieceY].getAlias() + " from " 
+        + pieceX+ "-"+ pieceY +" to "+ destinationX+ "-"+ destinationY);
+
+        Set<Point> legalMoves = boardState[pieceX][pieceY].getLegalMoves(true);
+        Point destination = new Point(destinationX, destinationY);
+        Point origin = new Point(pieceX, pieceY);
+        if(legalMoves.contains(destination))
+        {
+            ChessPiece currentPiece = boardState[pieceX][pieceY];
+            currentPiece.boardPos = new Point(destinationX, destinationY);
+            if(currentPiece instanceof King)
+            {
+                kingPositions.put(currentPiece.isBlack, currentPiece.boardPos);
+                if(!((King)currentPiece).hasMoved())
+                {
+                    Point rPos = addPoints(origin, straightPoints.get("right"));
+                    Point rightCastlePos = addPoints(origin, straightPoints.get("right"), 2);
+                    Point rRookPos = addPoints(origin, straightPoints.get("right"), 3);
+                    if(destination.equals(rightCastlePos))
+                    {
+                        // move rook the correct position when castling short
+                        boardState[rPos.x][rPos.y] = boardState[rRookPos.x][rRookPos.y];
+                        boardState[rRookPos.x][rRookPos.y] = null;
+                    }
+                    Point lPos = addPoints(origin, straightPoints.get("left"));
+                    Point leftCastlePos = addPoints(origin, straightPoints.get("left"), 2);
+                    Point lRookPos = addPoints(origin, straightPoints.get("left"), 4);
+                    if(destination.equals(leftCastlePos))
+                    {
+                        // move rook the correct position when castling long
+                        boardState[lPos.x][lPos.y] = boardState[lRookPos.x][lRookPos.y];
+                        boardState[lRookPos.x][lRookPos.y] = null;
+                    }
+                }
+                ((King)currentPiece).setHasMoved();
+            }
+
+            ChessPiece dest = boardState[destinationX][destinationY];
+            if(dest != null && dest.isBlack)
+            {
+                blackPieces.remove(dest);
+            }
+            else if(dest != null)
+            {
+                whitePieces.remove(dest);
+            }
+            
+            if(currentPiece instanceof Pawn)
+            {
+                ((Pawn)currentPiece).setCameFrom(origin);
+                Set<Point> enpassentSquares = ((Pawn)currentPiece).getEnpassendSquares();
+                if(enpassentSquares.contains(destination))
+                {
+                    Point enpCapturePos = null;
+                    if(currentPiece.isBlack)
+                    {
+                        enpCapturePos = addPoints(destination, straightPoints.get("up"));
+                    }
+                    else
+                    {
+                        enpCapturePos =  addPoints(destination, straightPoints.get("down"));
+                    }
+                    boardState[enpCapturePos.x][enpCapturePos.y] = null;
+                }
+            }
+
+            boardState[destinationX][destinationY] = currentPiece;
+            boardState[pieceX][pieceY] = null;
+            drawBoard(null);
+            blacksTurn = !blacksTurn;
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+
+    }
+    public Map<Boolean, Point> getKingPositions()
+    {
+        return kingPositions;
+    }
+    boolean checkMate(boolean isBlack)
+    {
+        for (ChessPiece chessPiece : blackPieces) {
+            
+        }
+        return true;
+    }
+    Set<ChessPiece> kingChecked(boolean isBlack)
+    {
+        Set<ChessPiece> checkingPieces = new HashSet<ChessPiece>();
+        if(!isBlack)
+        {
+            System.out.println("current white king position");
+            System.out.println(kingPositions.get(isBlack));
+            
+            for (ChessPiece chessPiece : blackPieces) 
+            {
+                if(chessPiece.getLegalMoves(false).contains(kingPositions.get(isBlack)))
+                {
+                    checkingPieces.add(chessPiece);
+                }
+            }
+
+        }
+        else
+        {
+            System.out.println("current black king position");
+            System.out.println(kingPositions.get(isBlack));
+            for (ChessPiece chessPiece : whitePieces) 
+            {
+                if(chessPiece.getLegalMoves(false).contains(kingPositions.get(isBlack)))
+                {
+                    checkingPieces.add(chessPiece);
+                }
+            }
+        }
+        return checkingPieces;
+    }
+    boolean inBounds(int x, int y)
+    {
+        return x > -1 && x < 8 && y > -1 && y < 8;
+    }
+    private void stringToBoard(String setup)
+    {
+        Boolean isBlack = false;
+        String[] fenString = setup.split("/");
+        String rowStr = "";
+
+        for (int row = 0; row < 8; row++) 
+        {
+            rowStr = fenString[row];
+            for (int col = 0; col < 8;) {
+                char currChar = rowStr.charAt(col);
+                if(Character.isDigit(currChar))
+                {
+                    int nEmpties = Character.getNumericValue(rowStr.charAt(col));
+                    for(int emptyI = 0; emptyI < nEmpties; emptyI++)
+                    {
+                        boardState[row][col] = null;
+                        col++;
+                    }
+
+                }
+                else
+                {
+                    if(Character.isUpperCase(currChar))
+                    {
+                        currChar = Character.toLowerCase(currChar);
+                        isBlack = false;
+                    }
+                    else
+                    {
+                        isBlack = true;
+                    }
+                    
+                    switch(currChar)
+                    {
+                        case 'p':
+                            boardState[row][col] = new Pawn(isBlack, 
+                                                new Point(row, col),
+                                                this);
+                            break;
+                        case 'b':
+                            boardState[row][col] = new Bishop(isBlack, 
+                                                    new Point(row, col), 
+                                                    this);
+                            break;
+                        case 'r':
+                            boardState[row][col] = new Rook(isBlack, 
+                                                    new Point(row, col), 
+                                                    this);
+                            break;
+                        case 'q':
+                            boardState[row][col] = new Queen(isBlack, 
+                                                    new Point(row, col),
+                                                    this);
+                            break;
+                        case 'k':
+                            boardState[row][col] = new King(isBlack, 
+                                                    new Point(row, col),
+                                                    this);
+                            kingPositions.put(isBlack, new Point(row, col));                            
+                            break;
+                        case 'n':
+                            boardState[row][col] = new Knight(isBlack, 
+                                                    new Point(row, col),
+                                                    this);
+                            break;
+                    }
+                    if(isBlack) blackPieces.add(boardState[row][col]); else whitePieces.add(boardState[row][col]);
+                    col++;
+
+                }
+
+            }
+        }
+
+
+
+    }
+
+    String drawBoard(Set<Point> legalMoves)
+    {
+        String output = "";
+        String token = "";
+        output += "  _ _ _ _ _ _ _ _";
+        System.out.println("  _ _ _ _ _ _ _ _");
+        for (int row = 0; row < boardSize; row++) {
+            System.out.print(row + "|");
+            output += row + "|";
+            for (int col = 0; col < boardSize; col++) {
+                
+                if(boardState[row][col] != null)
+                {
+                    token = boardState[row][col].getAlias();
+                    System.out.print(token + '|' );
+                    output += token + '|' ;
+                }else
+                {
+                    if(legalMoves != null &&
+                       legalMoves.contains(new Point(row, col)))
+                    {
+                        System.out.print("x|");
+                    }else
+                    {
+                        System.out.print("_|");
+                        output += "_|";
+                    }
+                    
+                }
+
+            }
+            System.out.print("\n");
+            output += "\n";
+        }
+        System.out.println("  0 1 2 3 4 5 6 7");
+        output += "  0 1 2 3 4 5 6 7";
+        return output;
+    }
+    
+    public Set<Point> getLegalMoves(int x, int y)
+    {
+        return boardState[x][y].getLegalMoves(true);
+    }
+
+    public ArrayList<CellState> getListBoardState()
+    {
+        String imagePath = null;
+        String alias = null;
+        boolean isEmpty = false;
+        
+        ArrayList<CellState> listBoardState = new ArrayList<CellState>();
+        for (int row = 0; row < boardState.length; row++) {
+            for (int col = 0; col < boardState.length; col++) 
+            {
+                if(boardState[row][col] == null)
+                {
+                    alias = null;
+                    isEmpty = true;
+                    imagePath = null;
+                }else
+                {
+                    alias = boardState[row][col].getAlias();
+                    isEmpty = false;
+                    imagePath = this.imgPaths.get(alias);
+                }
+
+                listBoardState.add
+                (
+                    new CellState(
+                                  row, col, imagePath, 
+                                  alias,
+                                  isEmpty
+                                )
+                );
+            }
+        }
+        return listBoardState;
+    }
+    public ChessPiece[][] getBoardState()
+    {
+        return boardState;
+    }
+    public Point addPoints(Point a, Point b)
+    {
+        return new Point(a.x + b.x, a.y + b.y);
+    }
+    public Point addPoints(Point a, Point b, int multiplier)
+    {
+        Point c = new Point(b.x*multiplier, b.y*multiplier);
+        return addPoints(a, c);
+    }
+}
+class CellState
+{
+    private int x;
+    private int y;
+    private String imagePath;
+    private String alias;
+    private boolean empty;
+    CellState(int x, int y, String imagePath, String alias, boolean isEmpty)
+    {
+        this.x = x;
+        this.y = y;
+        this.imagePath = imagePath;
+        this.alias = alias;
+        this.empty = isEmpty;       
+    }
+
+    public int getX() {
+        return x;
+    }
+    public int getY() {
+        return y;
+    }
+    public String getImagePath() {
+        return imagePath;
+    }
+    public String getAlias() {
+        return alias;
+    }
+    public boolean isEmpty() {
+        return empty;
+    }
+
+}

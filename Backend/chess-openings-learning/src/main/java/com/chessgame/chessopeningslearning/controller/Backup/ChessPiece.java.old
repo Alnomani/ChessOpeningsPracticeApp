@@ -1,0 +1,630 @@
+package com.chessgame.chessopeningslearning.controller;
+import java.awt.Point;
+import java.util.Map;
+import java.util.HashSet;
+import java.util.Hashtable;
+import java.util.Set;
+
+abstract class ChessPiece
+{   
+    protected String alias;
+    protected boolean isBlack;
+    protected Point boardPos;
+    protected Set<Point> legalPoints;
+    final static Map<String, Point> diagPoints;
+    final static Map<String, Point> straightPoints;
+    final static Map<String, Point> knightPoints;
+
+    static ChessBoard chessBoardClass;
+    static ChessPiece[][] boardState;
+    static
+    {
+        diagPoints = new Hashtable<>();
+        straightPoints = new Hashtable<>();
+        knightPoints = new Hashtable<>();
+        // Diagonal Points
+        diagPoints.put("leftUpper", new Point(-1, -1));
+        diagPoints.put("rightLower", new Point(1, 1));
+        diagPoints.put("rightUpper", new Point(-1, 1));
+        diagPoints.put("leftLower", new Point(1, -1));
+
+        // Straight Points
+        straightPoints.put("up", new Point(-1, 0));
+        straightPoints.put("down", new Point(1, 0));
+        straightPoints.put("right", new Point(0, 1));
+        straightPoints.put("left", new Point(0, -1));
+
+        // Knight Points
+        knightPoints.put("kUpperLeftH", new Point(-2,-1));
+        knightPoints.put("kUpperLeftL", new Point(-1, -2));
+        knightPoints.put("kLowerLeftL", new Point(2, -1));
+        knightPoints.put("kLowerLeftH", new Point(1, -2));
+
+        knightPoints.put("kLowerRightL", new Point(2, 1));
+        knightPoints.put("kLowerRightH", new Point(1, 2));
+        knightPoints.put("kUpperRightH", new Point(-2, 1));
+        knightPoints.put("kUpperRightL", new Point(-1, 2));
+    }
+
+    abstract Set<Point> getLegalMoves(boolean blockCheck);
+    ChessPiece(boolean isBlack, Point boardPos, ChessBoard chessBoardClass)
+    {
+        ChessPiece.chessBoardClass = chessBoardClass;
+        ChessPiece.boardState = chessBoardClass.getBoardState();
+        this.boardPos = boardPos;
+        this.isBlack = isBlack;
+        this.legalPoints = new HashSet<Point>();
+    }
+    protected void pointsMovement(Map<String, Point> Points)
+    {
+        // Points movement has a reach of 1 around the piece.
+        for (Map.Entry<String, Point> entry : Points.entrySet()) {
+            Point offset = entry.getValue();
+            int newX = this.boardPos.x + offset.x;
+            int newY = this.boardPos.y + offset.y;
+            if(inBounds(newX, newY))
+            {
+                ChessPiece currPiece = boardState[newX][newY];
+                if(currPiece != null)
+                {
+                    if(currPiece.isBlack != this.isBlack)
+                    {
+                        // adjacent piece can be captured
+                        this.legalPoints.add(new Point(newX, newY)); 
+                    }
+                }
+                else
+                {
+                    this.legalPoints.add(new Point(newX, newY)); 
+                }
+
+            }
+        }
+
+    }
+    protected void lineMovement(Point offset)
+    {
+        // Line movement has a reach that goes until the bounds/another piece is hit
+        int newX = this.boardPos.x + offset.x;
+        int newY = this.boardPos.y + offset.y;
+        while(inBounds(newX, newY))
+        {   
+            ChessPiece currPiece = boardState[newX][newY];
+            if(currPiece != null)
+            {
+               if(currPiece.isBlack == this.isBlack)
+               {
+                    break; // piece has same suit so uncapturable
+               }
+               else
+               {
+                    // piece can be captured, so its a legal move. but do stop checking past it.
+                    this.legalPoints.add(new Point(newX, newY));
+                    // if its a king its check, but you also have discovered check meaning a piece
+                    // you haven't moved is now checking the king.
+                    break;
+               }
+            }
+            // space is empty and can be moved to.
+            this.legalPoints.add(new Point(newX, newY));
+            newX += offset.x;
+            newY += offset.y;
+        } 
+    }
+    protected String InLineOfSight(Point offset)
+    {
+        // Line movement has a reach that goes until the bounds/another piece is hit
+        int newX = this.boardPos.x + offset.x;
+        int newY = this.boardPos.y + offset.y;
+        while(inBounds(newX, newY))
+        {   
+            ChessPiece nextPosition = boardState[newX][newY];
+            if(nextPosition != null)
+            {
+                return nextPosition.getAlias();
+            }
+            newX += offset.x;
+            newY += offset.y;
+        }
+        return null;
+    }
+    protected void blockCheck()
+    {
+         Set<ChessPiece> checkingPieces = chessBoardClass.kingChecked(isBlack);
+        // if in check try to block with current piece.
+        if(checkingPieces.size() > 0)
+        {
+            System.out.println("CHECK");
+            if(checkingPieces.size() > 1)
+            {
+                // if multiple chess pieces are checking you cannot block with one piece.
+                legalPoints.clear();
+                System.out.println("Multiple piece are checking the king!");
+                return;
+            }
+            ChessPiece checkingPiece = checkingPieces.iterator().next();
+            System.out.println(checkingPiece + "at --->"+ checkingPiece.boardPos.x + ":" + checkingPiece.boardPos.y);
+            // the king of the player, who's turn it is, is currently checked.
+            // try to move the selected piece and see if it blocks the check
+            // intersection between the checking pieces movement and current
+            // piece movement.
+            Set<Point> checkingPieceMoves = checkingPiece.getLegalMoves(false);
+            // add own position of checkingpiece, to consider hitting it as a legal move as well if in range
+            checkingPieceMoves.add(new Point(checkingPiece.boardPos.x, checkingPiece.boardPos.y));
+            legalPoints.retainAll(checkingPieceMoves);
+            System.out.println("Overlap:");
+            System.out.println(legalPoints);
+            Point kingPosition = chessBoardClass.getKingPositions().get(isBlack);
+            Set<Point> trueLegalPositions = new HashSet<>();
+            int prevX = boardPos.x;
+            int prevY = boardPos.y;
+            ChessPiece prevChessPiece = null;
+            ChessPiece newPosPiece = null;
+            int numLegalPoints = legalPoints.size();
+            // what if there are no legalpoints
+            for (Point position : legalPoints) 
+            {
+                // move piece to position and check if king still checked.
+                // if not then add to try legal positions
+                
+                newPosPiece = boardState[position.x][position.y];
+                boardState[position.x][position.y] = boardState[prevX][prevY];
+                boardState[prevX][prevY] = prevChessPiece;
+                
+                System.out.println("piece put at new location " + position.x + ":" + position.y);
+                System.out.println("checking piece " + checkingPiece.boardPos.x + ":" + checkingPiece.boardPos.y);
+                //System.out.println("legals after move:");
+                //System.out.println(checkingPiece.getLegalMoves(false));
+                System.out.println("Kingsposition");
+                System.out.println(kingPosition);
+                checkingPieceMoves = checkingPiece.getLegalMoves(false);
+                System.out.println(checkingPiece.boardPos);
+                System.out.println(position);
+                if(checkingPiece.boardPos.equals(position) || !checkingPieceMoves.contains(kingPosition))
+                {
+                    // checking piece not checking king after move
+                    trueLegalPositions.add(position);
+                    System.out.println("Adding position: " + position.x +":"+ position.y);
+                }
+                prevX = position.x;
+                prevY = position.y;
+                prevChessPiece = newPosPiece;
+            }
+            if(numLegalPoints > 0)
+            {
+                // return piece to original position
+                boardState[boardPos.x][boardPos.y] = boardState[prevX][prevY];
+                boardState[prevX][prevY] = prevChessPiece;
+                legalPoints = trueLegalPositions;
+            }
+
+        }       
+    
+    }
+    protected void walkingIntoCheck()
+    {
+        Set<Point> copy = new HashSet<>(legalPoints);
+        int prevX = boardPos.x;
+        int prevY = boardPos.y;
+        ChessPiece oldPiece = null;
+        ChessPiece prevOldPiece = null;
+        int numLegalPoints = legalPoints.size();
+        for(Point legalPoint : copy)
+        {
+            // for each point place piece at that location
+            // and see if the king is checked.
+
+            oldPiece = boardState[legalPoint.x][legalPoint.y];
+            chessBoardClass.removeFromPiecesList(oldPiece);
+
+            boardState[legalPoint.x][legalPoint.y] = boardState[prevX][prevY];
+            if(boardState[legalPoint.x][legalPoint.y] instanceof King)
+            {
+                chessBoardClass.kingPositions.put(isBlack, new Point(legalPoint.x, legalPoint.y));
+                System.out.println(chessBoardClass.kingPositions);
+            }
+            boardState[prevX][prevY] = prevOldPiece;
+            chessBoardClass.addToPiecesList(prevOldPiece);
+            System.out.println("current point:");
+            System.out.println(legalPoint);
+            chessBoardClass.drawBoard(null);
+            if(chessBoardClass.kingChecked(isBlack).size() > 0)
+            {
+                legalPoints.remove(legalPoint);
+                System.out.println("Removing legal point:");
+                System.out.println(legalPoint);
+            }
+            prevOldPiece = oldPiece;
+            prevX = legalPoint.x;
+            prevY = legalPoint.y;
+        }
+        if(numLegalPoints > 0)
+        {
+            boardState[boardPos.x][boardPos.y] = boardState[prevX][prevY];
+            boardState[prevX][prevY] = prevOldPiece;
+            chessBoardClass.addToPiecesList(prevOldPiece);
+        }
+
+    }
+    protected void diagonalMovement()
+    {
+        // left upper movement line
+        Point leftUpper = new Point(-1, -1);
+        Point rightLower = new Point(1, 1);
+        Point rightUpper = new Point(-1, 1);
+        Point leftLower = new Point(1, -1);
+
+        lineMovement(leftUpper);
+        lineMovement(leftLower);
+
+        lineMovement(rightLower);
+        lineMovement(rightUpper);
+    }
+    protected void straightMovement()
+    {
+
+        // up movement line
+        Point up = new Point(0, -1);
+        Point down = new Point(0, 1);
+        Point right = new Point(1, 0);
+        Point left = new Point(-1, 0);
+        
+        lineMovement(up);
+        lineMovement(down);
+
+        lineMovement(right);
+        lineMovement(left);
+    }
+    protected boolean inBounds(int x, int y)
+    {
+        return x > -1 && x < 8 && y > -1 && y < 8;
+    }
+    public String getAlias()
+    {
+        return this.alias;
+    }
+}
+
+class Bishop extends ChessPiece
+{
+    Bishop(boolean isBlack, Point boardPos, ChessBoard chessBoardClass)
+    {
+        super(isBlack, boardPos, chessBoardClass);
+        this.alias = (isBlack) ? "b" :  "B";   
+    }
+    public Set<Point> getLegalMoves(boolean blockCheck)
+    {
+        // clear before recalculation
+        this.legalPoints.clear();
+        this.legalPoints = new HashSet<Point>();
+        this.diagonalMovement();
+        if( blockCheck)
+        {
+            blockCheck();
+            walkingIntoCheck();
+        }
+        //filter out moves that lead to check
+        
+        return legalPoints;
+    }
+}
+
+
+class Rook extends ChessPiece
+{
+    Rook(boolean isBlack, Point boardPos, ChessBoard chessBoardClass)
+    {
+        super(isBlack, boardPos, chessBoardClass);
+        this.alias = (isBlack) ? "r" :  "R";
+    }
+    // protected has package wide access unfortunately.
+    public Set<Point> getLegalMoves(boolean blockCheck)
+    {
+        // clear before recalculation
+        this.legalPoints.clear();
+        
+        this.legalPoints = new HashSet<Point>();
+        this.straightMovement();
+        if( blockCheck)
+        {
+            blockCheck();
+            System.out.println("Queenlegalpoints before wic:");
+            System.out.println(legalPoints);
+
+            walkingIntoCheck();
+            System.out.println("Queenlegalpoints after wic:");
+            System.out.println(legalPoints);
+        }
+        return legalPoints;
+    }
+}
+
+class Queen extends ChessPiece
+{
+    Queen(boolean isBlack, Point boardPos, ChessBoard chessBoardClass)
+    {
+        super(isBlack, boardPos, chessBoardClass);
+        this.alias = (isBlack) ? "q" :  "Q";
+    }
+    // protected has package wide access unfortunately.
+    public Set<Point> getLegalMoves(boolean blockCheck)
+    {
+        // clear before recalculation
+        this.legalPoints.clear();
+        
+        this.legalPoints = new HashSet<Point>();
+        this.straightMovement();
+        this.diagonalMovement();
+        if( blockCheck)
+        {
+            blockCheck();
+            walkingIntoCheck();
+        }
+
+        return legalPoints;
+    }
+}
+
+class King extends ChessPiece
+{
+    private boolean hasMoved = false;
+    King(boolean isBlack, Point boardPos, ChessBoard chessBoardClass)
+    {
+        super(isBlack, boardPos, chessBoardClass);
+        this.alias = (isBlack) ? "k" :  "K";
+    }
+    public boolean hasMoved()
+    {
+        return hasMoved;
+    }
+    public void setHasMoved()
+    {
+        hasMoved = true;
+    }
+    // protected has package wide access unfortunately.
+    public Set<Point> getLegalMoves(boolean blockCheck)
+    {
+        // clear before recalculation
+        this.legalPoints.clear();
+        this.legalPoints = new HashSet<Point>();
+        this.pointsMovement(straightPoints);
+        this.pointsMovement(diagPoints);
+        
+        Point leftPos = chessBoardClass.addPoints(boardPos, straightPoints.get("left"));
+        Point leftCPos = chessBoardClass.addPoints(leftPos, straightPoints.get("left"));
+        Point leftC2Pos = chessBoardClass.addPoints(leftCPos, straightPoints.get("left"));
+        Point rookPos = chessBoardClass.addPoints(leftC2Pos, straightPoints.get("left"));
+        if(!hasMoved)
+        {
+            // add legal move for castling.
+
+            System.out.println("king has not moved yet");
+            if(boardState[leftPos.x][leftPos.y] == null &&
+               boardState[leftCPos.x][leftCPos.y] == null &&
+               boardState[leftC2Pos.x][leftC2Pos.y] == null &&
+               boardState[rookPos.x][rookPos.y] instanceof Rook) 
+            {
+                System.out.println("adding left castling points");
+                legalPoints.add(leftCPos);
+                legalPoints.add(leftC2Pos);
+            }
+
+            Point rightPos = chessBoardClass.addPoints(boardPos, straightPoints.get("right"));
+            Point rightCPos = chessBoardClass.addPoints(rightPos, straightPoints.get("right"));
+            rookPos = chessBoardClass.addPoints(rightCPos, straightPoints.get("right"));
+
+            if(boardState[rightPos.x][rightPos.y] == null &&
+               boardState[rightCPos.x][rightCPos.y] == null &&
+               boardState[rookPos.x][rookPos.y] instanceof Rook) 
+            {
+                System.out.println("adding right castling point");
+                legalPoints.add(rightCPos);
+            }
+
+        }
+
+        if( blockCheck)
+        {
+            System.out.println("king movement points before walkingIntoCheck");
+            System.out.println(legalPoints);
+            walkingIntoCheck();
+        }
+        // if castling positions have not been removed, it means you don't have to castle through check.
+        if(legalPoints.contains(leftCPos) && legalPoints.contains(leftC2Pos))
+        {
+            legalPoints.remove(leftC2Pos); // just one extra legal square suffices for castling
+        }
+
+        return legalPoints;
+    }
+}
+
+class Knight extends ChessPiece
+{
+    Knight(boolean isBlack, Point boardPos, ChessBoard chessBoardClass)
+    {
+        super(isBlack, boardPos, chessBoardClass);
+        this.alias = (isBlack) ? "n" :  "N";
+    }
+    // protected has package wide access unfortunately.
+    public Set<Point> getLegalMoves(boolean blockCheck)
+    {
+        // clear before recalculation
+        this.legalPoints.clear();
+        // check how objects get passed in java
+        this.legalPoints = new HashSet<Point>();
+        this.pointsMovement(knightPoints);
+
+
+
+        if( blockCheck)
+        {
+            blockCheck();
+            walkingIntoCheck();
+        }
+        return legalPoints;
+    }
+}
+
+class Pawn extends ChessPiece
+{
+    Point cameFrom = null;
+    Set<Point> enpassendSquares;
+    Pawn(boolean isBlack, Point boardPos, ChessBoard chessBoardClass)
+    {
+        super(isBlack, boardPos, chessBoardClass);
+        this.alias = (isBlack) ? "p" :  "P";
+    }
+    public Set<Point> getEnpassendSquares() 
+    {
+        return enpassendSquares;
+    }
+
+    public Point getCameFrom() 
+    {
+        return cameFrom;
+    }
+    public void setCameFrom(Point cameFrom) 
+    {
+        this.cameFrom = cameFrom;
+    }
+    // protected has package wide access unfortunately.
+    public Set<Point> getLegalMoves(boolean blockCheck)
+    {
+        // clear before recalculation
+        // check how objects get passed in java
+        legalPoints = new HashSet<Point>();
+        // don't forget enpassent
+        enpassendSquares = new HashSet<Point>();
+
+        // diagMovement: Add position if pawn can hit something diagonally, depending on whether they're black or white(as their orientation is different)
+        if(!isBlack)
+        {
+            
+            int newX = diagPoints.get("leftUpper").x + boardPos.x;
+            int newY = diagPoints.get("leftUpper").y + boardPos.y;
+            canHitAtPosition(newX, newY);
+
+            newX = diagPoints.get("rightUpper").x + boardPos.x;
+            newY = diagPoints.get("rightUpper").y + boardPos.y;
+            canHitAtPosition(newX, newY);
+
+            newX = straightPoints.get("up").x + boardPos.x;
+            newY = straightPoints.get("up").y + boardPos.y;
+            if(inBounds(newX, newY) && boardState[newX][newY] == null)
+            {
+                this.legalPoints.add(new Point(newX, newY));
+            }
+            // Second move from the 7th rank
+            if(boardPos.x == 6)
+            {
+                newX = straightPoints.get("up").x*2 + boardPos.x;
+                newY = straightPoints.get("up").y*2 + boardPos.y;
+                if(boardState[newX][newY] == null)
+                {
+                    this.legalPoints.add(new Point(newX, newY));
+                }
+            } 
+        }
+        else
+        {
+            int newX = diagPoints.get("leftLower").x + boardPos.x;
+            int newY = diagPoints.get("leftLower").y + boardPos.y;
+            canHitAtPosition(newX, newY);
+
+            newX = diagPoints.get("rightLower").x + boardPos.x;
+            newY = diagPoints.get("rightLower").y + boardPos.y;
+            canHitAtPosition(newX, newY);
+            
+            newX = straightPoints.get("down").x + boardPos.x;
+            newY = straightPoints.get("down").y + boardPos.y;
+            
+            if(inBounds(newX, newY) && boardState[newX][newY] == null)
+            {
+                this.legalPoints.add(new Point(newX, newY));
+            }
+            // Second move from the 7th rank
+            if(boardPos.x == 1)
+            {
+                newX = straightPoints.get("down").x*2 + boardPos.x;
+                newY = straightPoints.get("down").y*2 + boardPos.y;
+                if(boardState[newX][newY] == null)
+                {
+                    this.legalPoints.add(new Point(newX, newY));
+                }
+            } 
+
+        }
+        int newX = straightPoints.get("left").x + boardPos.x;
+        int newY = straightPoints.get("left").y + boardPos.y;
+        enpassent(newX, newY, isBlack);
+
+        newX = straightPoints.get("right").x + boardPos.x;
+        newY = straightPoints.get("right").y + boardPos.y;
+        enpassent(newX, newY, isBlack);
+
+        if(blockCheck)
+        {
+            System.out.println("______________________");
+            System.out.println("Legalpoints before block check.");
+            System.out.println(legalPoints);
+
+            blockCheck();
+            walkingIntoCheck();
+
+            System.out.println("legalpoints after blockcheck");
+            System.out.println(legalPoints);
+        }
+        return legalPoints;
+    }
+
+    private void canHitAtPosition(int newX, int newY)
+    {
+        if(inBounds(newX, newY) )
+        {
+            ChessPiece currChessPiece = boardState[newX][newY];
+            if(currChessPiece != null && 
+                currChessPiece.isBlack != this.isBlack)
+            {
+                this.legalPoints.add(new Point(newX, newY));
+            }
+        }
+    }
+    private void enpassent(int newX, int newY, boolean isBlack)
+    {
+        if(inBounds(newX, newY) )
+        {
+            ChessPiece currChessPiece = boardState[newX][newY];
+            if(currChessPiece != null && 
+               currChessPiece.isBlack != this.isBlack &&
+               currChessPiece instanceof Pawn)
+            {
+                Point cameFrom = ((Pawn)currChessPiece).getCameFrom();
+                if(cameFrom != null)
+                {
+                    int diff = cameFrom.x - currChessPiece.boardPos.x;
+                    if(Math.abs(diff) > 1)
+                    {
+                        Point loc = new Point(newX, newY);
+                        
+                        if(isBlack)
+                        {
+                            Point offset = chessBoardClass.addPoints(loc, straightPoints.get("down"));
+                            legalPoints.add(offset);
+                            enpassendSquares.add(offset);
+                        }
+                        else
+                        {
+                            Point offset = chessBoardClass.addPoints(loc, straightPoints.get("up"));
+                            legalPoints.add(offset);
+                            enpassendSquares.add(offset);
+                        }
+                        
+                    }
+                }            
+            }
+        }
+    }
+
+
+}

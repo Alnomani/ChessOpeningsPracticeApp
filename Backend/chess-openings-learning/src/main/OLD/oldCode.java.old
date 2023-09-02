@@ -1,0 +1,253 @@
+String toFenNotation()
+    {
+        String sFENBoardState = "";
+        int consecutiveEmpty = 0;
+        for (int row = 0; row < chessBoard.length; row++) {
+
+            for (int col = 0; col < chessBoard.length; col++) 
+            {
+                if(chessBoard[row][col] != null)
+                {
+                    if(consecutiveEmpty > 0)
+                    {
+                        sFENBoardState += consecutiveEmpty;
+                        consecutiveEmpty = 0;
+                    }
+                    sFENBoardState += chessBoard[row][col].alias;
+                }
+                else
+                {
+                    consecutiveEmpty++;
+                }
+            }
+            if(consecutiveEmpty > 0)
+            {
+                sFENBoardState += consecutiveEmpty;
+                consecutiveEmpty = 0;
+            }
+            sFENBoardState += "/";
+        }
+        //fenBoardState += (blacksTurn) ? "b" : "w";
+
+        return sFENBoardState;
+    }
+
+    class FENBoardState
+{
+    private String boardstate;
+    private boolean blacksTurn;
+    FENBoardState(boolean blacksTurn, String boardstate)
+    {
+        this.blacksTurn = blacksTurn;
+        this.boardstate = boardstate;
+    }
+
+    // Getters need to be explicitly public for them to be serializable...
+    public String getBoardState()
+    {
+        return boardstate;
+    }
+    public boolean getBlacksTurn()
+    {
+        return blacksTurn;
+    }
+}
+
+
+
+    void mainCheck(int pieceX, int pieceY)
+    {
+        System.out.println("blackkingx: " + blackKingPosition.x + " piecex" + pieceX);
+        System.out.println("blackkingy: " + blackKingPosition.y + " pieceY " + pieceY);
+        if(pieceX == blackKingPosition.x || pieceX == whiteKingPosition.x)
+        {
+            // if piece is in the same row as the king
+            // look left and right on the row to see if a straight moving piece has unobstructed line of sight
+            // to the king.
+            check1(pieceX, pieceY, 
+                   straightPoints.get("left"), straightPoints.get("right"), "r");
+        }
+        else if(pieceY == blackKingPosition.y || pieceY == whiteKingPosition.y)
+        {
+            // if piece is in the same row as the king
+            // look up and down on the row to see if a straight moving piece has unobstructed line of sight
+            // to the king.            
+            check1(pieceX, pieceY, 
+                   straightPoints.get("up"), straightPoints.get("down"), "r");
+        }
+        
+        int kOffsetX = blackKingPosition.x - pieceX;
+        int kOffsetY = blackKingPosition.y - pieceY;
+        int wKOffsetX = whiteKingPosition.x - pieceX;
+        int wKOffsetY = whiteKingPosition.y - pieceY;
+        if(Math.abs(kOffsetX) == Math.abs(kOffsetY) ||
+           Math.abs(wKOffsetX) == Math.abs(wKOffsetY) )
+        {
+            if(kOffsetX == kOffsetY){
+                // if x and y of the vector between the kings pos and piece pos is 
+                // either both negative or both positive then its the line from the
+                // left upper corner to lower right.
+                check1(pieceX, pieceY, 
+                    diagPoints.get("leftUpper"), diagPoints.get("rightLower"), "b");
+            }
+            else
+            {
+                check1(pieceX, pieceY, 
+                    diagPoints.get("leftLower"), diagPoints.get("rightUpper"), "b");
+            } 
+            
+
+        }
+
+
+
+    }
+
+    void check1(int pieceX, int pieceY, Point left, Point right, String pAlias)
+    {
+
+        System.out.println(pieceX+ "x:"+ pieceY);
+        System.out.println(left.x + " left "+ left.y);
+        System.out.println(right.x + " right "+ right.y);
+        String aliasLeft = boardState[pieceX][pieceY].pieceInLineOfSight(left);
+        String aliasRight = boardState[pieceX][pieceY].pieceInLineOfSight(right);
+        if(aliasLeft == null || aliasRight == null)
+        {
+            System.out.println("alias is null");
+            return;
+        }
+
+        System.out.println(aliasLeft + "<-|->" + aliasRight);
+        String aliasLLeft = aliasLeft.toLowerCase();
+        String aliasLRight = aliasRight.toLowerCase();
+        System.out.println(aliasLRight);
+        if(aliasLLeft.equals("k"))
+        {
+            System.out.println("partial line of sight on king from k");
+            if(aliasLRight.equals(pAlias) || aliasLRight.equals("q"))
+            {
+                System.out.println("Discovered Check or Pinned piece first if");
+                if(!(aliasLeft.charAt(0) == aliasRight.charAt(0)))
+                {
+                    System.out.println("piece is pinned");
+                }
+            }
+        }
+        else if(aliasLRight.equals(pAlias) || aliasLRight.equals("q"))
+        {
+            System.out.println("partial line of sight on king");
+            if(aliasLLeft.equals("k"))
+            {
+                System.out.println("Discovered Check or Pinned piece");
+            }
+        }
+
+    }
+    
+    
+    
+    
+    
+    protected void blockCheck()
+    {
+         Set<ChessPiece> checkingPieces = chessBoardClass.kingChecked(isBlack);
+        // if in check try to block with current piece.
+        if(checkingPieces.size() > 0)
+        {
+            System.out.println("CHECK");
+            if(checkingPieces.size() > 1)
+            {
+                // if multiple chess pieces are checking you cannot block with one piece.
+                legalPoints.clear();
+                System.out.println("Multiple piece are checking the king!");
+                return;
+            }
+            ChessPiece checkingPiece = checkingPieces.iterator().next();
+            System.out.println(checkingPiece + "at --->"+ checkingPiece.boardPos.x + ":" + checkingPiece.boardPos.y);
+            // the king of the player, who's turn it is, is currently checked.
+            // try to move the selected piece and see if it blocks the check
+            // intersection between the checking pieces movement and current
+            // piece movement.
+            Set<Point> checkingPieceMoves = checkingPiece.getLegalMoves(false);
+            // add own position of checkingpiece, to consider hitting it as a legal move as well if in range
+            checkingPieceMoves.add(new Point(checkingPiece.boardPos.x, checkingPiece.boardPos.y));
+            legalPoints.retainAll(checkingPieceMoves);
+            System.out.println("Overlap:");
+            System.out.println(legalPoints);
+            Point kingPosition = chessBoardClass.getKingPositions().get(isBlack).boardPos;
+            Set<Point> trueLegalPositions = new HashSet<>();
+            int prevX = boardPos.x;
+            int prevY = boardPos.y;
+            Point origin = boardPos;
+            ChessPiece prevChessPiece = null;
+            ChessPiece newPosPiece = null;
+            int numLegalPoints = legalPoints.size();
+            // what if there are no legalpoints
+            for (Point position : legalPoints) 
+            {
+                // move piece to position and check if king still checked.
+                // if not then add to try legal positions
+                
+                newPosPiece = boardState[position.x][position.y];
+                boardState[position.x][position.y] = boardState[prevX][prevY];
+                boardState[position.x][position.y].boardPos = position;
+                boardState[prevX][prevY] = prevChessPiece;
+                
+                System.out.println("piece put at new location " + position.x + ":" + position.y);
+                System.out.println("checking piece " + checkingPiece.boardPos.x + ":" + checkingPiece.boardPos.y);
+                //System.out.println("legals after move:");
+                //System.out.println(checkingPiece.getLegalMoves(false));
+                System.out.println("Kingsposition");
+                System.out.println(kingPosition);
+                checkingPieceMoves = checkingPiece.getLegalMoves(false);
+                System.out.println(checkingPiece.boardPos);
+                System.out.println(position);
+                if(checkingPiece.boardPos.equals(position) || !checkingPieceMoves.contains(kingPosition))
+                {
+                    // checking piece not checking king after move
+                    trueLegalPositions.add(position);
+                    System.out.println("Adding position: " + position.x +":"+ position.y);
+                }
+                prevX = position.x;
+                prevY = position.y;
+                prevChessPiece = newPosPiece;
+            }
+            if(numLegalPoints > 0)
+            {
+                // return piece to original position
+                boardState[boardPos.x][boardPos.y] = boardState[prevX][prevY];
+                boardState[boardPos.x][boardPos.y].boardPos = origin;
+                boardState[prevX][prevY] = prevChessPiece;
+                legalPoints = trueLegalPositions;
+            }
+
+        }       
+    
+    }
+    
+    public Map<String, String[]> getCapturedPiecesPaths()
+    {
+        // some unneccessary work is being done here
+        String[] blackPiecesImgPaths = new String[capturedLists.get(BLACK).size()];
+        String[] whitePiecesImgPaths = new String[capturedLists.get(WHITE).size()];
+        String currentAlias = "";
+        Map<String, String[]> capturedPiecesImgPaths = new HashMap<>();
+        for (int i = 0; i < blackPiecesImgPaths.length; i++) 
+        {
+            currentAlias = capturedLists.get(BLACK).get(i).getAlias();
+            blackPiecesImgPaths[i] = imgPaths.get(currentAlias);
+        }
+
+        for (int i = 0; i < whitePiecesImgPaths.length; i++) 
+        {
+            currentAlias = capturedLists.get(WHITE).get(i).getAlias();
+            whitePiecesImgPaths[i] = imgPaths.get(currentAlias);
+        }
+        Arrays.sort(blackPiecesImgPaths);
+        Arrays.sort(whitePiecesImgPaths);
+
+        capturedPiecesImgPaths.put("Black", blackPiecesImgPaths);
+        capturedPiecesImgPaths.put("White", whitePiecesImgPaths);
+        return capturedPiecesImgPaths;
+    }
+
